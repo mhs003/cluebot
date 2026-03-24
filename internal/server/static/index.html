@@ -86,6 +86,12 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: #0f1117; colo
 .trigger-badge.disk { background: #1f002d; color: #a371f7; }
 .trigger-badge.restart { background: #002d00; color: #3fb950; }
 .trigger-badge.service { background: #001a2d; color: #58a6ff; }
+.service-block { background: #0d1117; border: 1px solid #21262d; border-radius: 6px; padding: 14px; margin-bottom: 12px; }
+.service-block:last-child { margin-bottom: 0; }
+.service-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; font-size: 15px; }
+.logs-section { margin-top: 10px; }
+.logs-section h5 { font-size: 12px; color: #8b949e; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
+.log-output { background: #161b22; border: 1px solid #30363d; border-radius: 4px; padding: 10px; font-size: 12px; font-family: 'Consolas', 'Monaco', monospace; color: #c9d1d9; overflow-x: auto; white-space: pre-wrap; word-break: break-all; max-height: 200px; overflow-y: auto; line-height: 1.5; }
 </style>
 </head>
 <body>
@@ -391,7 +397,25 @@ function showIncidentDetail(idx) {
             system.services.services.forEach(function(s) {
                 const statusClass = s.active ? 'service-active' : 'service-inactive';
                 const statusText = s.active ? 'Running' : 'Stopped';
-                html += '<div class="service-item"><span>' + s.name + '</span><span class="' + statusClass + '">' + statusText + '</span></div>';
+                html += '<div class="service-block">';
+                html += '<div class="service-header"><strong>' + s.name + '</strong><span class="' + statusClass + '">' + statusText + '</span></div>';
+                if (s.state) html += detailRow('State', s.state);
+                if (s.sub_state) html += detailRow('Sub State', s.sub_state);
+                if (s.loaded) html += detailRow('Loaded', s.loaded);
+                if (s.main_pid && s.main_pid !== '0') html += detailRow('Main PID', s.main_pid);
+                if (s.exec_start) html += detailRow('ExecStart', s.exec_start);
+                if (s.exit_code) html += detailRow('Exit Code', s.exit_code);
+                if (s.exit_status) html += detailRow('Exit Status', s.exit_status);
+                if (s.status_msg) html += detailRow('Status Message', s.status_msg);
+                if (s.active_since) html += detailRow('Active Since', s.active_since);
+                if (s.recent_logs && s.recent_logs.length > 0) {
+                    html += '<div class="logs-section"><h5>Recent Logs</h5><pre class="log-output">';
+                    s.recent_logs.forEach(function(line) {
+                        html += escapeHtml(line) + '\n';
+                    });
+                    html += '</pre></div>';
+                }
+                html += '</div>';
             });
         }
         html += '</div>';
@@ -403,6 +427,12 @@ function showIncidentDetail(idx) {
 
 function detailRow(label, value) {
     return '<div class="detail-row"><span class="detail-label">' + label + '</span><span class="detail-value">' + value + '</span></div>';
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.appendChild(document.createTextNode(text));
+    return div.innerHTML;
 }
 
 function closeModal() {
@@ -418,6 +448,7 @@ document.addEventListener('keydown', function(e) {
 });
 
 function connect() {
+    console.log('conencting...');
     if (ws) ws.close();
     const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
     const token = localStorage.getItem(sessionKey) || '';

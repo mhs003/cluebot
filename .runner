@@ -1,8 +1,9 @@
 @vars:
-    ENTRY="./cmd/cluebot"
-    OUTPUT="./build"
-    BIN="cluebot"
+    ENTRY=./cmd/cluebot
+    OUTPUT=./build
+    BIN=cluebot
 
 build:
     mkdir -p {{OUTPUT}}
-    !go build -o {{OUTPUT}}/{{BIN}} {{ENTRY}}
+    !go build -o {{OUTPUT}}/{{BIN}} {{ENTRY}} 2>&1
+    # !command -> print the command in terminal

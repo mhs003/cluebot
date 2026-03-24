@@ -119,12 +119,31 @@ func (l *Logger) GetRecentIncidents(limit int) ([]IncidentEntry, error) {
 		if err != nil {
 			continue
 		}
-		var entry IncidentEntry
-		if err := json.Unmarshal(data, &entry); err != nil {
+
+		var raw map[string]interface{}
+		if err := json.Unmarshal(data, &raw); err != nil {
 			continue
 		}
+
+		entry := IncidentEntry{
+			Time:    asString(raw["time"]),
+			Type:    asString(raw["trigger"]),
+			Trigger: asString(raw["trigger"]),
+			System:  raw,
+		}
+
 		results = append(results, entry)
 	}
 
 	return results, nil
+}
+
+func asString(v interface{}) string {
+	if v == nil {
+		return ""
+	}
+	if s, ok := v.(string); ok {
+		return s
+	}
+	return fmt.Sprintf("%v", v)
 }
