@@ -119,22 +119,30 @@ func runMonitorLoop(cfg *config.Config, logInst *logger.Logger, srv *server.Serv
 		log.Printf("Services check error: %v", err)
 	}
 
-	srv.UpdateStats(cpu, mem, disk, restart, services)
+	processes, err := monitor.CheckProcesses()
+	if err != nil {
+		log.Printf("Process check error: %v", err)
+	}
+
+	srv.UpdateStats(cpu, mem, disk, restart, services, processes)
 
 	if cpu != nil && cpu.Alert {
-		incidents.Collect("cpu", cpu, mem, disk, restart, services, logInst)
+		incidents.Collect("cpu", cpu, mem, disk, restart, services, processes, logInst)
 	}
 	if mem != nil && mem.Alert {
-		incidents.Collect("memory", cpu, mem, disk, restart, services, logInst)
+		incidents.Collect("memory", cpu, mem, disk, restart, services, processes, logInst)
 	}
 	if disk != nil && disk.Alert {
-		incidents.Collect("disk", cpu, mem, disk, restart, services, logInst)
+		incidents.Collect("disk", cpu, mem, disk, restart, services, processes, logInst)
 	}
 	if restart != nil && restart.Alert {
-		incidents.Collect("restart", cpu, mem, disk, restart, services, logInst)
+		incidents.Collect("restart", cpu, mem, disk, restart, services, processes, logInst)
 	}
 	if services != nil && services.Alert {
-		incidents.Collect("service", cpu, mem, disk, restart, services, logInst)
+		incidents.Collect("service", cpu, mem, disk, restart, services, processes, logInst)
+	}
+	if processes != nil && processes.Alert {
+		incidents.Collect("process", cpu, mem, disk, restart, services, processes, logInst)
 	}
 }
 

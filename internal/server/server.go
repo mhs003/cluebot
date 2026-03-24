@@ -25,11 +25,12 @@ type Server struct {
 }
 
 type Stats struct {
-	CPU      *monitor.CPUResult     `json:"cpu"`
-	Memory   *monitor.MemoryResult  `json:"memory"`
-	Disk     *monitor.DiskResult    `json:"disk"`
-	Restart  *monitor.RestartResult `json:"restart"`
-	Services *monitor.ServiceResult `json:"services,omitempty"`
+	CPU       *monitor.CPUResult     `json:"cpu"`
+	Memory    *monitor.MemoryResult  `json:"memory"`
+	Disk      *monitor.DiskResult    `json:"disk"`
+	Restart   *monitor.RestartResult `json:"restart"`
+	Services  *monitor.ServiceResult `json:"services,omitempty"`
+	Processes *monitor.ProcessResult `json:"processes,omitempty"`
 }
 
 type Credentials struct {
@@ -190,13 +191,14 @@ func (s *Server) handleIncidents(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(incidents)
 }
 
-func (s *Server) UpdateStats(cpu *monitor.CPUResult, mem *monitor.MemoryResult, disk *monitor.DiskResult, restart *monitor.RestartResult, services *monitor.ServiceResult) {
+func (s *Server) UpdateStats(cpu *monitor.CPUResult, mem *monitor.MemoryResult, disk *monitor.DiskResult, restart *monitor.RestartResult, services *monitor.ServiceResult, processes *monitor.ProcessResult) {
 	s.currentStats = &Stats{
-		CPU:      cpu,
-		Memory:   mem,
-		Disk:     disk,
-		Restart:  restart,
-		Services: services,
+		CPU:       cpu,
+		Memory:    mem,
+		Disk:      disk,
+		Restart:   restart,
+		Services:  services,
+		Processes: processes,
 	}
 
 	data, err := json.Marshal(s.currentStats)

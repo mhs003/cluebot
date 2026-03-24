@@ -25,6 +25,7 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: #0f1117; colo
 .header h1 { font-size: 20px; font-weight: 600; }
 .header .status { width: 10px; height: 10px; border-radius: 50%; background: #3fb950; animation: pulse 2s infinite; }
 .header .status.offline { background: #f85149; animation: none; }
+.header .status.connecting { background: #4949f8; animation: none; }
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
 .logout-btn { margin-left: auto; background: #21262d; border: 1px solid #30363d; color: #c9d1d9; padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 13px; }
 .logout-btn:hover { background: #30363d; }
@@ -56,6 +57,7 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: #0f1117; colo
 .incident-type.disk { background: #1f2937; color: #a371f7; }
 .incident-type.restart { background: #1f2937; color: #3fb950; }
 .incident-type.service { background: #1f2937; color: #58a6ff; }
+.incident-type.process { background: #1f2937; color: #f0883e; }
 .incident-time { color: #8b949e; }
 .no-incidents { color: #8b949e; text-align: center; padding: 24px; font-size: 14px; }
 
@@ -86,12 +88,20 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: #0f1117; colo
 .trigger-badge.disk { background: #1f002d; color: #a371f7; }
 .trigger-badge.restart { background: #002d00; color: #3fb950; }
 .trigger-badge.service { background: #001a2d; color: #58a6ff; }
+.trigger-badge.process { background: #2d1a00; color: #f0883e; }
 .service-block { background: #0d1117; border: 1px solid #21262d; border-radius: 6px; padding: 14px; margin-bottom: 12px; }
 .service-block:last-child { margin-bottom: 0; }
 .service-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; font-size: 15px; }
 .logs-section { margin-top: 10px; }
 .logs-section h5 { font-size: 12px; color: #8b949e; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
 .log-output { background: #161b22; border: 1px solid #30363d; border-radius: 4px; padding: 10px; font-size: 12px; font-family: 'Consolas', 'Monaco', monospace; color: #c9d1d9; overflow-x: auto; white-space: pre-wrap; word-break: break-all; max-height: 200px; overflow-y: auto; line-height: 1.5; }
+.alert-box { padding: 10px 14px; border-radius: 6px; font-size: 13px; font-weight: 600; margin: 10px 0; }
+.alert-box.crit { background: #2d0000; color: #f85149; border: 1px solid #f8514933; }
+.alert-box.warn { background: #2d1f00; color: #d29922; border: 1px solid #d2992233; }
+.process-row { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; font-size: 13px; border-bottom: 1px solid #21262d; }
+.process-row:last-child { border-bottom: none; }
+.process-name { color: #c9d1d9; font-family: 'Consolas', 'Monaco', monospace; }
+.process-count { color: #8b949e; font-variant-numeric: tabular-nums; }
 </style>
 </head>
 <body>
@@ -420,6 +430,23 @@ function showIncidentDetail(idx) {
         }
         html += '</div>';
     }
+    if (system.processes) {
+        html += '<div class="detail-section"><h4>Process Explosion Detection</h4>';
+        html += detailRow('Total Processes', system.processes.total_processes);
+        html += detailRow('Baseline Count', system.processes.baseline_count);
+        if (system.processes.total_processes > system.processes.baseline_count * 3) {
+            html += '<div class="alert-box crit">EXPLOSION DETECTED: ' + system.processes.total_processes + ' processes running (baseline: ' + system.processes.baseline_count + ')</div>';
+        }
+        if (system.processes.top_processes && system.processes.top_processes.length > 0) {
+            html += '<div class="logs-section"><h5>Top Processes by Count</h5>';
+            system.processes.top_processes.forEach(function(p) {
+                const pct = system.processes.total_processes > 0 ? ((p.count / system.processes.total_processes) * 100).toFixed(1) : 0;
+                html += '<div class="process-row"><span class="process-name">' + escapeHtml(p.name) + '</span><span class="process-count">' + p.count + ' (' + pct + '%)</span></div>';
+            });
+            html += '</div>';
+        }
+        html += '</div>';
+    }
 
     modal.innerHTML = html;
     document.getElementById('modal-overlay').classList.add('active');
@@ -454,7 +481,7 @@ function connect() {
     const token = localStorage.getItem(sessionKey) || '';
     ws = new WebSocket(protocol + '//' + window.location.host + '/ws?token=' + encodeURIComponent(token));
     const statusEl = document.getElementById('status');
-    statusEl.className = 'status';
+    statusEl.className = 'status connecting';
     ws.onopen = () => { statusEl.className = 'status'; };
     ws.onclose = () => {
         statusEl.className = 'status offline';
