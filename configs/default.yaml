@@ -1,4 +1,5 @@
 monitor_interval: 5
+process_interval: 1
 http_port: 8090
 log_dir: ./logs
 pid_file: ./cluebot.pid
@@ -9,3 +10,4 @@ thresholds:
   cpu_alert: 90
   memory_alert: 90
   disk_alert: 90
+  process_limit: 5000

@@ -25,7 +25,66 @@ var baselineSamples int = 0
 const baselineSampleSize = 5
 const explosionMultiplier = 5
 
-func CheckProcesses() (*ProcessResult, error) {
+// QuickProcessCount returns just the total process count from /proc.
+// This is very lightweight - only reads directory entries, no file I/O.
+// Use this for fast fork bomb detection (1-2s interval).
+func QuickProcessCount() (int, error) {
+	entries, err := os.ReadDir("/proc")
+	if err != nil {
+		return 0, err
+	}
+
+	count := 0
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		if _, err := strconv.Atoi(entry.Name()); err == nil {
+			count++
+		}
+	}
+	return count, nil
+}
+
+// QuickProcessCheck runs a fast process count and checks against baseline and limit.
+// Call this from the fast goroutine (1s interval).
+func QuickProcessCheck(limit int) (*ProcessResult, error) {
+	total, err := QuickProcessCount()
+	if err != nil {
+		return nil, fmt.Errorf("quick process check: %w", err)
+	}
+
+	// Build baseline from first few samples
+	if baselineSamples < baselineSampleSize {
+		processBaseline += total
+		baselineSamples++
+		if baselineSamples == baselineSampleSize {
+			processBaseline = max(processBaseline/baselineSampleSize, 50)
+		}
+	}
+
+	alert := false
+
+	// Check against explosion multiplier
+	if processBaseline > 0 && total > processBaseline*explosionMultiplier {
+		alert = true
+	}
+
+	// Check against hard limit
+	if limit > 0 && total > limit {
+		alert = true
+	}
+
+	return &ProcessResult{
+		TotalProcesses: total,
+		BaselineCount:  processBaseline,
+		Alert:          alert,
+	}, nil
+}
+
+// CheckProcesses does full process enumeration with top processes list.
+// Call this from the main monitor loop (5s interval) for dashboard display.
+func CheckProcesses(limit int) (*ProcessResult, error) {
 	counts, err := getProcessCounts()
 	if err != nil {
 		return nil, fmt.Errorf("process check: %w", err)
@@ -42,7 +101,6 @@ func CheckProcesses() (*ProcessResult, error) {
 		baselineSamples++
 		if baselineSamples == baselineSampleSize {
 			processBaseline = processBaseline / baselineSampleSize
-			// Ensure minimum baseline
 			if processBaseline < 50 {
 				processBaseline = 50
 			}
@@ -64,6 +122,11 @@ func CheckProcesses() (*ProcessResult, error) {
 	// Check for explosion
 	alert := false
 	if processBaseline > 0 && total > processBaseline*explosionMultiplier {
+		alert = true
+	}
+
+	// Check against hard limit
+	if limit > 0 && total > limit {
 		alert = true
 	}
 

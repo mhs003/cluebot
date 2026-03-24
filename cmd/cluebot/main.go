@@ -75,8 +75,13 @@ func start(cfg *config.Config, c *cli.CLI) {
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 
+	// Main monitor loop (CPU, RAM, Disk, Restart, Services, full Process check)
 	ticker := time.NewTicker(time.Duration(cfg.MonitorInterval) * time.Second)
 	defer ticker.Stop()
+
+	// Fast process check loop (just count, lightweight, catches fork bombs quickly)
+	processTicker := time.NewTicker(time.Duration(cfg.ProcessInterval) * time.Second)
+	defer processTicker.Stop()
 
 	fmt.Println("ClueBot monitoring started")
 	fmt.Printf("Dashboard: http://localhost:%d\n", cfg.HTTPPort)
@@ -85,6 +90,8 @@ func start(cfg *config.Config, c *cli.CLI) {
 		select {
 		case <-ticker.C:
 			runMonitorLoop(cfg, logInst, srv)
+		case <-processTicker.C:
+			runFastProcessCheck(cfg, logInst, srv)
 		case <-sig:
 			fmt.Println("\nShutting down ClueBot...")
 			c.RemovePID()
@@ -119,7 +126,7 @@ func runMonitorLoop(cfg *config.Config, logInst *logger.Logger, srv *server.Serv
 		log.Printf("Services check error: %v", err)
 	}
 
-	processes, err := monitor.CheckProcesses()
+	processes, err := monitor.CheckProcesses(cfg.Thresholds.ProcessLimit)
 	if err != nil {
 		log.Printf("Process check error: %v", err)
 	}
@@ -146,7 +153,25 @@ func runMonitorLoop(cfg *config.Config, logInst *logger.Logger, srv *server.Serv
 	}
 }
 
-func stop(cfg *config.Config, c *cli.CLI) {
+func runFastProcessCheck(cfg *config.Config, logInst *logger.Logger, _ *server.Server) {
+	result, err := monitor.QuickProcessCheck(cfg.Thresholds.ProcessLimit)
+	if err != nil {
+		log.Printf("Fast process check error: %v", err)
+		return
+	}
+
+	if result.Alert {
+		// Trigger full check to get top processes for the incident report
+		full, _ := monitor.CheckProcesses(cfg.Thresholds.ProcessLimit)
+		if full != nil {
+			result = full
+		}
+		incidents.Collect("process", nil, nil, nil, nil, nil, result, logInst)
+		log.Printf("WARNING: Process explosion detected! Total: %d, Baseline: %d", result.TotalProcesses, result.BaselineCount)
+	}
+}
+
+func stop(_ *config.Config, c *cli.CLI) {
 	if err := c.Stop(); err != nil {
 		fmt.Printf("Error: %v\n", err)
 		os.Exit(1)

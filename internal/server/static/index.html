@@ -255,6 +255,7 @@ document.getElementById('login-form').addEventListener('submit', function(e) {
         if (data.token) {
             localStorage.setItem(sessionKey, data.token);
             showDashboard();
+            location.reload();
         } else {
             errEl.textContent = data.error || 'Invalid credentials';
         }
@@ -590,7 +591,6 @@ document.addEventListener('keydown', function(e) {
 });
 
 function connect() {
-    console.log('conencting...');
     if (ws) ws.close();
     const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
     const token = localStorage.getItem(sessionKey) || '';

@@ -185,7 +185,7 @@ func (s *Server) handleIncidents(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	incidents, err := s.log.GetRecentIncidents(20)
 	if err != nil {
-		json.NewEncoder(w).Encode([]interface{}{})
+		json.NewEncoder(w).Encode([]any{})
 		return
 	}
 	json.NewEncoder(w).Encode(incidents)
