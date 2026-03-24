@@ -35,6 +35,8 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: #0f1117; colo
 .container { max-width: 1200px; margin: 0 auto; padding: 24px; }
 .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-bottom: 24px; }
 .card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 20px; }
+.card.clickable { cursor: pointer; transition: border-color 0.15s, box-shadow 0.15s; }
+.card.clickable:hover { border-color: #58a6ff; box-shadow: 0 0 0 1px #58a6ff22; }
 .card h3 { font-size: 14px; color: #8b949e; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 12px; }
 .card .value { font-size: 36px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .card .unit { font-size: 16px; color: #8b949e; margin-left: 4px; }
@@ -102,6 +104,11 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: #0f1117; colo
 .process-row:last-child { border-bottom: none; }
 .process-name { color: #c9d1d9; font-family: 'Consolas', 'Monaco', monospace; }
 .process-count { color: #8b949e; font-variant-numeric: tabular-nums; }
+.process-row-full { margin-bottom: 10px; }
+.process-row-full:last-child { margin-bottom: 0; }
+.process-row-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; font-size: 13px; }
+.process-bar { height: 4px; background: #21262d; border-radius: 2px; overflow: hidden; }
+.process-bar-fill { height: 100%; background: #58a6ff; border-radius: 2px; transition: width 0.5s ease; }
 </style>
 </head>
 <body>
@@ -165,6 +172,16 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: #0f1117; colo
 Restart detected: <span id="restart-status" class="ok">No</span>
 </div>
 </div>
+<div class="card clickable" onclick="showServicesModal()">
+<h3>Monitored Services</h3>
+<div><span class="value" id="svc-running">--</span><span class="unit" id="svc-total-label">/ --</span></div>
+<div style="margin-top:8px;font-size:13px;color:#8b949e" id="svc-summary">Click to view details</div>
+</div>
+<div class="card clickable" onclick="showProcessesModal()">
+<h3>Processes</h3>
+<div><span class="value" id="proc-count">--</span></div>
+<div style="margin-top:8px;font-size:13px;color:#8b949e" id="proc-baseline">Baseline: --</div>
+</div>
 </div>
 <div class="incidents">
 <h3>Recent Incidents</h3>
@@ -179,7 +196,7 @@ Restart detected: <span id="restart-status" class="ok">No</span>
 <div class="modal-overlay" id="modal-overlay">
 <div class="modal">
 <div class="modal-header">
-<h2>Incident Details</h2>
+<h2 id="modal-title">Incident Details</h2>
 <button class="modal-close" onclick="closeModal()">&times;</button>
 </div>
 <div class="modal-body" id="modal-body">
@@ -191,6 +208,7 @@ Restart detected: <span id="restart-status" class="ok">No</span>
 let ws = null;
 let reconnectTimer = null;
 let incidentsData = [];
+let lastStatsData = null;
 
 // Auth
 const sessionKey = 'cluebot_session';
@@ -284,6 +302,7 @@ function formatUptime(seconds) {
 }
 
 function updateUI(data) {
+    lastStatsData = data;
     if (data.cpu) {
         const cpu = data.cpu;
         const val = cpu.usage.toFixed(1);
@@ -330,6 +349,29 @@ function updateUI(data) {
             el.className = 'ok';
         }
     }
+    if (data.services) {
+        const svcs = data.services.services || [];
+        const running = svcs.filter(s => s.active).length;
+        document.getElementById('svc-running').textContent = running;
+        document.getElementById('svc-total-label').textContent = '/' + svcs.length;
+        const down = svcs.filter(s => !s.active);
+        if (down.length > 0) {
+            document.getElementById('svc-running').className = 'value crit';
+            document.getElementById('svc-summary').textContent = down.map(s => s.name).join(', ') + ' down';
+        } else {
+            document.getElementById('svc-running').className = 'value ok';
+            document.getElementById('svc-summary').textContent = 'All services running';
+        }
+    }
+    if (data.processes) {
+        document.getElementById('proc-count').textContent = data.processes.total_processes;
+        document.getElementById('proc-baseline').textContent = 'Baseline: ' + (data.processes.baseline_count || '--');
+        if (data.processes.alert) {
+            document.getElementById('proc-count').className = 'value crit';
+        } else {
+            document.getElementById('proc-count').className = 'value ok';
+        }
+    }
     document.getElementById('last-update').textContent = 'Updated: ' + new Date().toLocaleTimeString();
 }
 
@@ -361,10 +403,13 @@ function showIncidentDetail(idx) {
     const inc = reversed[idx];
     if (!inc) return;
 
+    const modalTitle = document.getElementById('modal-title');
     const modal = document.getElementById('modal-body');
     const system = inc.system || {};
     const trigger = inc.trigger || inc.type || 'unknown';
     const time = new Date(inc.time).toLocaleString();
+
+    modalTitle.innerText = "Incident Details"
 
     let html = '<div class="timestamp">' + time + '</div>';
     html += '<span class="trigger-badge ' + trigger + '">' + trigger.toUpperCase() + ' ALERT</span>';
@@ -460,6 +505,76 @@ function escapeHtml(text) {
     const div = document.createElement('div');
     div.appendChild(document.createTextNode(text));
     return div.innerHTML;
+}
+
+function showServicesModal() {
+    if (!lastStatsData || !lastStatsData.services) return;
+    const svcs = lastStatsData.services.services || [];
+    const modalTitle = document.getElementById('modal-title');
+    const modal = document.getElementById('modal-body');
+    const running = svcs.filter(s => s.active).length;
+
+    modalTitle.innerText = "Services Details"
+
+    let html = '<div class="detail-section"><h4>Service Status (' + running + '/' + svcs.length + ' running)</h4>';
+    svcs.forEach(function(s) {
+        const statusClass = s.active ? 'service-active' : 'service-inactive';
+        const statusText = s.active ? 'Running' : 'Stopped';
+        html += '<div class="service-block">';
+        html += '<div class="service-header"><strong>' + s.name + '</strong><span class="' + statusClass + '">' + statusText + '</span></div>';
+        if (s.state) html += detailRow('State', s.state);
+        if (s.sub_state) html += detailRow('Sub State', s.sub_state);
+        if (s.main_pid && s.main_pid !== '0') html += detailRow('Main PID', s.main_pid);
+        if (s.exec_start) html += detailRow('ExecStart', s.exec_start);
+        if (!s.active && s.exit_code) html += detailRow('Exit Code', s.exit_code);
+        if (!s.active && s.exit_status) html += detailRow('Exit Status', s.exit_status);
+        if (s.status_msg) html += detailRow('Status Message', s.status_msg);
+        if (s.recent_logs && s.recent_logs.length > 0) {
+            html += '<div class="logs-section"><h5>Recent Logs</h5><pre class="log-output">';
+            s.recent_logs.forEach(function(line) {
+                html += escapeHtml(line) + '\n';
+            });
+            html += '</pre></div>';
+        }
+        html += '</div>';
+    });
+    html += '</div>';
+
+    modal.innerHTML = html;
+    document.getElementById('modal-overlay').classList.add('active');
+}
+
+function showProcessesModal() {
+    if (!lastStatsData || !lastStatsData.processes) return;
+    const proc = lastStatsData.processes;
+    const modalTitle = document.getElementById('modal-title');
+    const modal = document.getElementById('modal-body');
+
+    modalTitle.innerText = "Process Details"
+
+    let html = '<div class="detail-section"><h4>Process Overview</h4>';
+    html += detailRow('Total Processes', proc.total_processes);
+    html += detailRow('Baseline Count', proc.baseline_count || 'Calculating...');
+    if (proc.alert) {
+        html += '<div class="alert-box crit">EXPLOSION DETECTED: ' + proc.total_processes + ' processes (baseline: ' + proc.baseline_count + ')</div>';
+    }
+    html += '</div>';
+
+    if (proc.top_processes && proc.top_processes.length > 0) {
+        html += '<div class="detail-section"><h4>Top Processes by Count</h4>';
+        proc.top_processes.forEach(function(p) {
+            const pct = proc.total_processes > 0 ? ((p.count / proc.total_processes) * 100).toFixed(1) : 0;
+            const barWidth = proc.total_processes > 0 ? ((p.count / proc.total_processes) * 100) : 0;
+            html += '<div class="process-row-full">';
+            html += '<div class="process-row-header"><span class="process-name">' + escapeHtml(p.name) + '</span><span class="process-count">' + p.count + ' (' + pct + '%)</span></div>';
+            html += '<div class="process-bar"><div class="process-bar-fill" style="width:' + barWidth + '%"></div></div>';
+            html += '</div>';
+        });
+        html += '</div>';
+    }
+
+    modal.innerHTML = html;
+    document.getElementById('modal-overlay').classList.add('active');
 }
 
 function closeModal() {

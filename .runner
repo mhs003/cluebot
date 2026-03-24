@@ -1,9 +1,11 @@
 @vars:
     ENTRY=./cmd/cluebot
-    OUTPUT=./build
+    BUILD_DIR=./build
     BIN=cluebot
 
+main:
+    !{{BUILD_DIR}}/{{BIN}} start
+
 build:
-    mkdir -p {{OUTPUT}}
-    !go build -o {{OUTPUT}}/{{BIN}} {{ENTRY}} 2>&1
-    # !command -> print the command in terminal
+    mkdir -p {{BUILD_DIR}}
+    !go build -o {{BUILD_DIR}}/{{BIN}} {{ENTRY}} 2>&1
