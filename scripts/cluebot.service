@@ -1,0 +1,28 @@
+[Unit]
+Description=ClueBot - VPS Incident Monitoring Agent
+Documentation=https://github.com/cluebot
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/cluebot start
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=cluebot
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadOnlyPaths=/
+ReadWritePaths=/var/lib/cluebot /run
+PrivateTmp=true
+
+# Process limits
+LimitNOFILE=65536
+LimitNPROC=4096
+
+[Install]
+WantedBy=multi-user.target
