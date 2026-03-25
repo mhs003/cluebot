@@ -1,8 +1,8 @@
 monitor_interval: 5
 process_interval: 1
 http_port: 8090
-log_dir: ./logs
-pid_file: ./cluebot.pid
+log_dir: /var/lib/cluebot # ./logs
+pid_file: /run/cluebot.pid # ./cluebot.pid
 services:
   - docker
   - harbrixd

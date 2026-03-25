@@ -21,7 +21,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	cfg, err := config.Load("configs/default.yaml")
+	cfg, err := config.Load(config.LibDir + "/configs/default.yaml")
 	if err != nil {
 		log.Fatalf("Failed to load config: %v", err)
 	}

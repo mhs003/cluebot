@@ -23,6 +23,8 @@ type Config struct {
 	Thresholds      Thresholds `yaml:"thresholds"`
 }
 
+const LibDir = "/var/lib/cluebot"
+
 func Load(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -33,7 +35,7 @@ func Load(path string) (*Config, error) {
 		MonitorInterval: 5,
 		ProcessInterval: 1,
 		HTTPPort:        8090,
-		LogDir:          "/var/lib/cluebot",
+		LogDir:          LibDir,
 		PIDFile:         "/run/cluebot.pid",
 		Services:        []string{"nginx", "docker", "postgres", "redis"},
 		Thresholds: Thresholds{
