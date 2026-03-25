@@ -6,7 +6,7 @@ ClueBot monitors your Linux server for instability and captures detailed system 
 
 ![Dashboard](https://img.shields.io/badge/platform-linux--amd64-blue)
 ![Go](https://img.shields.io/badge/Go-1.25+-00ADD8)
-![License](https://img.shields.io/badge/license-MIT-green)
+![License](https://img.shields.io/badge/license-GPL3-green)
 
 ## What It Monitors
 
@@ -168,4 +168,4 @@ cluebot/
 
 ## License
 
-[MIT](/LICENSE)
+[GPL3](/LICENSE)
