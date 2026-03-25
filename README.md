@@ -8,7 +8,7 @@ ClueBot monitors your Linux server for instability and captures detailed system 
 ![Go](https://img.shields.io/badge/Go-1.25+-00ADD8)
 ![License](https://img.shields.io/badge/license-GPL3-green)
 
-<center><strong>[THIS PROJECT IS VIBE CODED]</strong></center>
+<strong style="color: red;">[THIS PROJECT IS VIBE CODED]</strong>
 
 ## What It Monitors
 
