@@ -131,25 +131,36 @@ func runMonitorLoop(cfg *config.Config, logInst *logger.Logger, srv *server.Serv
 		log.Printf("Process check error: %v", err)
 	}
 
+	kernel, err := monitor.CheckKernelLogs()
+	if err != nil {
+		log.Printf("Kernel log check error: %v", err)
+	}
+
 	srv.UpdateStats(cpu, mem, disk, restart, services, processes)
 
 	if cpu != nil && cpu.Alert {
-		incidents.Collect("cpu", cpu, mem, disk, restart, services, processes, logInst)
+		incidents.Collect("cpu", cpu, mem, disk, restart, services, processes, kernel, logInst)
 	}
 	if mem != nil && mem.Alert {
-		incidents.Collect("memory", cpu, mem, disk, restart, services, processes, logInst)
+		incidents.Collect("memory", cpu, mem, disk, restart, services, processes, kernel, logInst)
 	}
 	if disk != nil && disk.Alert {
-		incidents.Collect("disk", cpu, mem, disk, restart, services, processes, logInst)
+		incidents.Collect("disk", cpu, mem, disk, restart, services, processes, kernel, logInst)
 	}
 	if restart != nil && restart.Alert {
-		incidents.Collect("restart", cpu, mem, disk, restart, services, processes, logInst)
+		incidents.Collect("restart", cpu, mem, disk, restart, services, processes, kernel, logInst)
 	}
 	if services != nil && services.Alert {
-		incidents.Collect("service", cpu, mem, disk, restart, services, processes, logInst)
+		incidents.Collect("service", cpu, mem, disk, restart, services, processes, kernel, logInst)
 	}
 	if processes != nil && processes.Alert {
-		incidents.Collect("process", cpu, mem, disk, restart, services, processes, logInst)
+		incidents.Collect("process", cpu, mem, disk, restart, services, processes, kernel, logInst)
+	}
+	if kernel != nil && kernel.Alert {
+		incidents.Collect("kernel", cpu, mem, disk, restart, services, processes, kernel, logInst)
+		for _, ev := range kernel.Events {
+			log.Printf("KERNEL [%s]: %s", ev.Severity, ev.Message)
+		}
 	}
 }
 
@@ -166,7 +177,7 @@ func runFastProcessCheck(cfg *config.Config, logInst *logger.Logger, _ *server.S
 		if full != nil {
 			result = full
 		}
-		incidents.Collect("process", nil, nil, nil, nil, nil, result, logInst)
+		incidents.Collect("process", nil, nil, nil, nil, nil, result, nil, logInst)
 		log.Printf("WARNING: Process explosion detected! Total: %d, Baseline: %d", result.TotalProcesses, result.BaselineCount)
 	}
 }

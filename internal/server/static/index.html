@@ -60,6 +60,7 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: #0f1117; colo
 .incident-type.restart { background: #1f2937; color: #3fb950; }
 .incident-type.service { background: #1f2937; color: #58a6ff; }
 .incident-type.process { background: #1f2937; color: #f0883e; }
+.incident-type.kernel { background: #1f2937; color: #da3633; }
 .incident-time { color: #8b949e; }
 .no-incidents { color: #8b949e; text-align: center; padding: 24px; font-size: 14px; }
 
@@ -91,6 +92,7 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: #0f1117; colo
 .trigger-badge.restart { background: #002d00; color: #3fb950; }
 .trigger-badge.service { background: #001a2d; color: #58a6ff; }
 .trigger-badge.process { background: #2d1a00; color: #f0883e; }
+.trigger-badge.kernel { background: #2d0000; color: #da3633; }
 .service-block { background: #0d1117; border: 1px solid #21262d; border-radius: 6px; padding: 14px; margin-bottom: 12px; }
 .service-block:last-child { margin-bottom: 0; }
 .service-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; font-size: 15px; }
@@ -109,6 +111,12 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: #0f1117; colo
 .process-row-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; font-size: 13px; }
 .process-bar { height: 4px; background: #21262d; border-radius: 2px; overflow: hidden; }
 .process-bar-fill { height: 100%; background: #58a6ff; border-radius: 2px; transition: width 0.5s ease; }
+.kernel-event { padding: 8px 0; border-bottom: 1px solid #21262d; font-size: 13px; }
+.kernel-event:last-child { border-bottom: none; }
+.kernel-severity { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 11px; font-weight: 600; text-transform: uppercase; margin-right: 8px; background: #21262d; color: #8b949e; }
+.kernel-severity.crit { background: #2d0000; color: #f85149; }
+.kernel-severity.warn { background: #2d1f00; color: #d29922; }
+.kernel-message { color: #c9d1d9; font-family: 'Consolas', 'Monaco', monospace; word-break: break-all; }
 </style>
 </head>
 <body>
@@ -415,7 +423,7 @@ function showIncidentDetail(idx) {
     let html = '<div class="timestamp">' + time + '</div>';
     html += '<span class="trigger-badge ' + trigger + '">' + trigger.toUpperCase() + ' ALERT</span>';
 
-    if (system.cpu) {
+    if (system.cpu && system.cpu.alert) {
         html += '<div class="detail-section"><h4>CPU</h4>';
         html += detailRow('Usage', system.cpu.usage?.toFixed(1) + '%');
         html += detailRow('Load Avg 1m', system.cpu.load_avg_1?.toFixed(2));
@@ -423,7 +431,7 @@ function showIncidentDetail(idx) {
         html += detailRow('Load Avg 15m', system.cpu.load_avg_15?.toFixed(2));
         html += '</div>';
     }
-    if (system.memory) {
+    if (system.memory && system.memory.alert) {
         html += '<div class="detail-section"><h4>Memory</h4>';
         html += detailRow('Usage', system.memory.usage?.toFixed(1) + '%');
         html += detailRow('Used', system.memory.used_mb?.toFixed(0) + ' MB');
@@ -432,7 +440,7 @@ function showIncidentDetail(idx) {
         html += detailRow('Swap Used', system.memory.swap_used_mb?.toFixed(1) + ' MB');
         html += '</div>';
     }
-    if (system.disk) {
+    if (system.disk && system.disk.alert) {
         html += '<div class="detail-section"><h4>Disk</h4>';
         if (system.disk.mounts) {
             system.disk.mounts.forEach(function(m) {
@@ -441,13 +449,13 @@ function showIncidentDetail(idx) {
         }
         html += '</div>';
     }
-    if (system.restart) {
+    if (system.restart && system.restart.alert) {
         html += '<div class="detail-section"><h4>Uptime</h4>';
         html += detailRow('Current Uptime', formatUptime(system.restart.uptime_seconds));
         html += detailRow('Restart Detected', system.restart.alert ? 'Yes' : 'No');
         html += '</div>';
     }
-    if (system.services) {
+    if (system.services && system.services.alert) {
         html += '<div class="detail-section"><h4>Services</h4>';
         if (system.services.services) {
             system.services.services.forEach(function(s) {
@@ -476,7 +484,7 @@ function showIncidentDetail(idx) {
         }
         html += '</div>';
     }
-    if (system.processes) {
+    if (system.processes && system.processes.alert) {
         html += '<div class="detail-section"><h4>Process Explosion Detection</h4>';
         html += detailRow('Total Processes', system.processes.total_processes);
         html += detailRow('Baseline Count', system.processes.baseline_count);
@@ -491,6 +499,17 @@ function showIncidentDetail(idx) {
             });
             html += '</div>';
         }
+        html += '</div>';
+    }
+    if (system.kernel && system.kernel.events && system.kernel.events.length > 0 && system.kernel.alert) {
+        html += '<div class="detail-section"><h4>Kernel Events</h4>';
+        system.kernel.events.forEach(function(ev) {
+            const sevClass = ev.severity === 'panic' ? 'crit' : (ev.severity === 'critical' || ev.severity === 'error' ? 'warn' : '');
+            html += '<div class="kernel-event">';
+            html += '<span class="kernel-severity ' + sevClass + '">' + ev.severity + '</span>';
+            html += '<span class="kernel-message">' + escapeHtml(ev.message) + '</span>';
+            html += '</div>';
+        });
         html += '</div>';
     }
 
