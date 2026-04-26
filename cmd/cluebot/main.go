@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cluebot/internal/alerts"
 	"cluebot/internal/cli"
 	"cluebot/internal/config"
 	"cluebot/internal/incidents"
@@ -13,6 +14,11 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+)
+
+var (
+	alertTracker *monitor.AlertTracker
+	telegramBot  *alerts.TelegramBot
 )
 
 func main() {
@@ -64,6 +70,15 @@ func start(cfg *config.Config, c *cli.CLI) {
 		log.Fatalf("Failed to create logger: %v", err)
 	}
 
+	alertTracker = monitor.NewAlertTracker(cfg.Alerts.CooldownMinutes, cfg.Alerts.Deduplication)
+
+	telegramBot = alerts.NewTelegramBot(
+		cfg.Alerts.Telegram.BotToken,
+		cfg.Alerts.Telegram.ChatID,
+		cfg.Alerts.Telegram.Enabled,
+		cfg.Alerts.Telegram.NotifyOn,
+	)
+
 	srv := server.New(cfg.HTTPPort, logInst)
 	go func() {
 		log.Printf("Starting HTTP server on port %d", cfg.HTTPPort)
@@ -75,16 +90,18 @@ func start(cfg *config.Config, c *cli.CLI) {
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 
-	// Main monitor loop (CPU, RAM, Disk, Restart, Services, full Process check)
 	ticker := time.NewTicker(time.Duration(cfg.MonitorInterval) * time.Second)
 	defer ticker.Stop()
 
-	// Fast process check loop (just count, lightweight, catches fork bombs quickly)
 	processTicker := time.NewTicker(time.Duration(cfg.ProcessInterval) * time.Second)
 	defer processTicker.Stop()
 
 	fmt.Println("ClueBot monitoring started")
 	fmt.Printf("Dashboard: http://localhost:%d\n", cfg.HTTPPort)
+
+	if cfg.Alerts.Telegram.Enabled {
+		fmt.Println("Telegram alerts enabled")
+	}
 
 	for {
 		select {
@@ -136,30 +153,107 @@ func runMonitorLoop(cfg *config.Config, logInst *logger.Logger, srv *server.Serv
 		log.Printf("Kernel log check error: %v", err)
 	}
 
-	srv.UpdateStats(cpu, mem, disk, restart, services, processes)
+	processResource, err := monitor.CheckProcessResources(cfg.Thresholds.SingleProcessCPU, cfg.Thresholds.SingleProcessMemory)
+	if err != nil {
+		log.Printf("Process resource check error: %v", err)
+	}
 
+	var portResult *monitor.PortScanResult
+	if cfg.PortMonitoring.Enabled {
+		portResult, err = monitor.ScanPorts(cfg.PortMonitoring.Ports, cfg.PortMonitoring.AlertOnUnexpected)
+		if err != nil {
+			log.Printf("Port scan error: %v", err)
+		}
+	}
+
+	srv.UpdateStats(cpu, mem, disk, restart, services, processes, processResource, portResult)
+
+	handleAlerts(cfg, cpu, mem, disk, restart, services, processes, kernel, processResource, portResult, logInst)
+
+	handleAutoKill(cfg, processResource, processes)
+}
+
+func handleAlerts(
+	cfg *config.Config,
+	cpu *monitor.CPUResult,
+	mem *monitor.MemoryResult,
+	disk *monitor.DiskResult,
+	restart *monitor.RestartResult,
+	services *monitor.ServiceResult,
+	processes *monitor.ProcessResult,
+	kernel *monitor.KernelResult,
+	processResource *monitor.ProcessResourceResult,
+	portResult *monitor.PortScanResult,
+	logInst *logger.Logger,
+) {
 	if cpu != nil && cpu.Alert {
-		incidents.Collect("cpu", cpu, mem, disk, restart, services, processes, kernel, logInst)
+		incidents.Collect("cpu", cpu, mem, disk, restart, services, processes, kernel, processResource, portResult, logInst, telegramBot, alertTracker)
 	}
 	if mem != nil && mem.Alert {
-		incidents.Collect("memory", cpu, mem, disk, restart, services, processes, kernel, logInst)
+		incidents.Collect("memory", cpu, mem, disk, restart, services, processes, kernel, processResource, portResult, logInst, telegramBot, alertTracker)
 	}
 	if disk != nil && disk.Alert {
-		incidents.Collect("disk", cpu, mem, disk, restart, services, processes, kernel, logInst)
+		incidents.Collect("disk", cpu, mem, disk, restart, services, processes, kernel, processResource, portResult, logInst, telegramBot, alertTracker)
 	}
 	if restart != nil && restart.Alert {
-		incidents.Collect("restart", cpu, mem, disk, restart, services, processes, kernel, logInst)
+		incidents.Collect("restart", cpu, mem, disk, restart, services, processes, kernel, processResource, portResult, logInst, telegramBot, alertTracker)
 	}
 	if services != nil && services.Alert {
-		incidents.Collect("service", cpu, mem, disk, restart, services, processes, kernel, logInst)
+		incidents.Collect("service", cpu, mem, disk, restart, services, processes, kernel, processResource, portResult, logInst, telegramBot, alertTracker)
 	}
 	if processes != nil && processes.Alert {
-		incidents.Collect("process", cpu, mem, disk, restart, services, processes, kernel, logInst)
+		incidents.Collect("process", cpu, mem, disk, restart, services, processes, kernel, processResource, portResult, logInst, telegramBot, alertTracker)
+	}
+	if processResource != nil && processResource.Alert {
+		incidents.Collect("process_resource", cpu, mem, disk, restart, services, processes, kernel, processResource, portResult, logInst, telegramBot, alertTracker)
 	}
 	if kernel != nil && kernel.Alert {
-		incidents.Collect("kernel", cpu, mem, disk, restart, services, processes, kernel, logInst)
+		incidents.Collect("kernel", cpu, mem, disk, restart, services, processes, kernel, processResource, portResult, logInst, telegramBot, alertTracker)
 		for _, ev := range kernel.Events {
 			log.Printf("KERNEL [%s]: %s", ev.Severity, ev.Message)
+		}
+	}
+	if portResult != nil && portResult.Alert {
+		incidents.Collect("port", cpu, mem, disk, restart, services, processes, kernel, processResource, portResult, logInst, telegramBot, alertTracker)
+	}
+}
+
+func handleAutoKill(cfg *config.Config, processResource *monitor.ProcessResourceResult, processes *monitor.ProcessResult) {
+	if !cfg.AutoKill.Enabled {
+		return
+	}
+
+	if processes != nil && processes.Alert && cfg.AutoKill.ProcessExplosionKill {
+		log.Printf("WARNING: Process explosion detected, auto-kill enabled")
+		for _, p := range processes.TopProcesses {
+			if p.Count > 200 {
+				pids, err := monitor.KillProcessByName(p.Name)
+				if err == nil && len(pids) > 0 {
+					log.Printf("Auto-killed %d processes with name: %s", len(pids), p.Name)
+				}
+				break
+			}
+		}
+	}
+
+	if processResource != nil && processResource.Alert {
+		for _, p := range processResource.HighCPUProcesses {
+			if p.CPU >= float64(cfg.AutoKill.CPUThreshold) {
+				log.Printf("WARNING: High CPU process %s (PID: %d, CPU: %.1f%%), auto-kill enabled",
+					p.Name, p.PID, p.CPU)
+				if err := monitor.KillProcess(p.PID); err == nil {
+					log.Printf("Auto-killed process %s (PID: %d)", p.Name, p.PID)
+				}
+			}
+		}
+		for _, p := range processResource.HighMemoryProcesses {
+			if p.Memory >= float64(cfg.AutoKill.MemoryThreshold) {
+				log.Printf("WARNING: High memory process %s (PID: %d, Memory: %.1f%%), auto-kill enabled",
+					p.Name, p.PID, p.Memory)
+				if err := monitor.KillProcess(p.PID); err == nil {
+					log.Printf("Auto-killed process %s (PID: %d)", p.Name, p.PID)
+				}
+			}
 		}
 	}
 }
@@ -172,12 +266,11 @@ func runFastProcessCheck(cfg *config.Config, logInst *logger.Logger, _ *server.S
 	}
 
 	if result.Alert {
-		// Trigger full check to get top processes for the incident report
 		full, _ := monitor.CheckProcesses(cfg.Thresholds.ProcessLimit)
 		if full != nil {
 			result = full
 		}
-		incidents.Collect("process", nil, nil, nil, nil, nil, result, nil, logInst)
+		incidents.Collect("process", nil, nil, nil, nil, nil, result, nil, nil, nil, logInst, telegramBot, alertTracker)
 		log.Printf("WARNING: Process explosion detected! Total: %d, Baseline: %d", result.TotalProcesses, result.BaselineCount)
 	}
 }

@@ -25,12 +25,14 @@ type Server struct {
 }
 
 type Stats struct {
-	CPU       *monitor.CPUResult     `json:"cpu"`
-	Memory    *monitor.MemoryResult  `json:"memory"`
-	Disk      *monitor.DiskResult    `json:"disk"`
-	Restart   *monitor.RestartResult `json:"restart"`
-	Services  *monitor.ServiceResult `json:"services,omitempty"`
-	Processes *monitor.ProcessResult `json:"processes,omitempty"`
+	CPU             *monitor.CPUResult             `json:"cpu"`
+	Memory          *monitor.MemoryResult          `json:"memory"`
+	Disk            *monitor.DiskResult            `json:"disk"`
+	Restart         *monitor.RestartResult         `json:"restart"`
+	Services        *monitor.ServiceResult         `json:"services,omitempty"`
+	Processes       *monitor.ProcessResult         `json:"processes,omitempty"`
+	ProcessResource *monitor.ProcessResourceResult `json:"process_resource,omitempty"`
+	Port            *monitor.PortScanResult        `json:"port,omitempty"`
 }
 
 type Credentials struct {
@@ -38,7 +40,6 @@ type Credentials struct {
 	Password string `json:"password"`
 }
 
-// Hardcoded credentials — add more entries for multiple users
 var validCredentials = []Credentials{
 	{Username: "admin", Password: "admin"},
 	{Username: "operator", Password: "operator"},
@@ -62,6 +63,9 @@ func (s *Server) Start() error {
 	http.HandleFunc("/ws", s.authMiddleware(s.handleWS))
 	http.HandleFunc("/api/stats", s.authMiddleware(s.handleStats))
 	http.HandleFunc("/api/incidents", s.authMiddleware(s.handleIncidents))
+	http.HandleFunc("/api/ports", s.authMiddleware(s.handlePorts))
+	http.HandleFunc("/api/ports/kill", s.authMiddleware(s.handlePortKill))
+	http.HandleFunc("/api/processes/kill", s.authMiddleware(s.handleProcessKill))
 	http.HandleFunc("/", s.handleIndex)
 
 	addr := fmt.Sprintf(":%d", s.port)
@@ -72,8 +76,6 @@ func (s *Server) authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		token := r.Header.Get("Authorization")
 		if token == "" {
-			// Allow WebSocket upgrade without auth header if cookie present
-			// Fallback to query param for WebSocket
 			token = r.URL.Query().Get("token")
 			if token == "" {
 				http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
@@ -191,14 +193,110 @@ func (s *Server) handleIncidents(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(incidents)
 }
 
-func (s *Server) UpdateStats(cpu *monitor.CPUResult, mem *monitor.MemoryResult, disk *monitor.DiskResult, restart *monitor.RestartResult, services *monitor.ServiceResult, processes *monitor.ProcessResult) {
+func (s *Server) handlePorts(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
+	ports, err := monitor.ScanPorts(nil, false)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(ports)
+}
+
+type PortKillRequest struct {
+	Port int `json:"port"`
+}
+
+func (s *Server) handlePortKill(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req PortKillRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"error": "invalid request"})
+		return
+	}
+
+	if req.Port <= 0 {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"error": "invalid port"})
+		return
+	}
+
+	pid, err := monitor.KillProcessOnPort(req.Port)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]int{"killed_pid": pid})
+}
+
+type ProcessKillRequest struct {
+	PID int `json:"pid"`
+}
+
+func (s *Server) handleProcessKill(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req ProcessKillRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"error": "invalid request"})
+		return
+	}
+
+	if req.PID <= 1 {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"error": "cannot kill PID 1"})
+		return
+	}
+
+	err := monitor.KillProcess(req.PID)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]int{"killed_pid": req.PID})
+}
+
+func (s *Server) UpdateStats(
+	cpu *monitor.CPUResult,
+	mem *monitor.MemoryResult,
+	disk *monitor.DiskResult,
+	restart *monitor.RestartResult,
+	services *monitor.ServiceResult,
+	processes *monitor.ProcessResult,
+	processResource *monitor.ProcessResourceResult,
+	port *monitor.PortScanResult,
+) {
 	s.currentStats = &Stats{
-		CPU:       cpu,
-		Memory:    mem,
-		Disk:      disk,
-		Restart:   restart,
-		Services:  services,
-		Processes: processes,
+		CPU:             cpu,
+		Memory:          mem,
+		Disk:            disk,
+		Restart:         restart,
+		Services:        services,
+		Processes:       processes,
+		ProcessResource: processResource,
+		Port:            port,
 	}
 
 	data, err := json.Marshal(s.currentStats)

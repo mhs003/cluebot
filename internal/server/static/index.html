@@ -117,6 +117,19 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: #0f1117; colo
 .kernel-severity.crit { background: #2d0000; color: #f85149; }
 .kernel-severity.warn { background: #2d1f00; color: #d29922; }
 .kernel-message { color: #c9d1d9; font-family: 'Consolas', 'Monaco', monospace; word-break: break-all; }
+.port-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.port-table th { text-align: left; padding: 8px; border-bottom: 1px solid #30363d; color: #8b949e; font-weight: 600; }
+.port-table td { padding: 8px; border-bottom: 1px solid #21262d; }
+.port-table tr:hover { background: #1f2937; }
+.port-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; font-weight: 600; background: #21262d; color: #58a6ff; }
+.port-kill-btn { background: #21262d; border: 1px solid #f85149; color: #f85149; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 12px; }
+.port-kill-btn:hover { background: #f85149; color: #fff; }
+.process-kill-btn { background: #21262d; border: 1px solid #f85149; color: #f85149; padding: 2px 8px; border-radius: 4px; cursor: pointer; font-size: 11px; margin-left: 8px; }
+.process-kill-btn:hover { background: #f85149; color: #fff; }
+.incident-type.process_resource { background: #1f2937; color: #a371f7; }
+.incident-type.port { background: #1f2937; color: #39d353; }
+.trigger-badge.process_resource { background: #1f002d; color: #a371f7; }
+.trigger-badge.port { background: #002d12; color: #39d353; }
 </style>
 </head>
 <body>
@@ -186,9 +199,32 @@ Restart detected: <span id="restart-status" class="ok">No</span>
 <div style="margin-top:8px;font-size:13px;color:#8b949e" id="svc-summary">Click to view details</div>
 </div>
 <div class="card clickable" onclick="showProcessesModal()">
-<h3>Processes</h3>
-<div><span class="value" id="proc-count">--</span></div>
-<div style="margin-top:8px;font-size:13px;color:#8b949e" id="proc-baseline">Baseline: --</div>
+  <h3>Processes</h3>
+  <div><span class="value" id="proc-count">--</span></div>
+  <div style="margin-top:8px;font-size:13px;color:#8b949e" id="proc-baseline">Baseline: --</div>
+</div>
+<div class="card clickable" onclick="showProcessResourceModal()">
+  <h3>Top CPU Process</h3>
+  <div style="margin-top:8px;">
+    <div id="top-cpu-name" style="font-size:15px;font-weight:600;color:#c9d1d9;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">--</div>
+    <div style="margin-top:4px;font-size:13px;color:#8b949e">PID: <span id="top-cpu-pid">--</span></div>
+  </div>
+  <div style="margin-top:8px;"><span class="value" id="top-cpu-val" style="font-size:28px">--</span><span class="unit">%</span></div>
+  <div class="bar"><div class="bar-fill" id="top-cpu-bar" style="width:0%;background:#3fb950"></div></div>
+</div>
+<div class="card clickable" onclick="showProcessResourceModal()">
+  <h3>Top Memory Process</h3>
+  <div style="margin-top:8px;">
+    <div id="top-mem-name" style="font-size:15px;font-weight:600;color:#c9d1d9;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">--</div>
+    <div style="margin-top:4px;font-size:13px;color:#8b949e">PID: <span id="top-mem-pid">--</span></div>
+  </div>
+  <div style="margin-top:8px;"><span class="value" id="top-mem-val" style="font-size:28px">--</span><span class="unit">%</span></div>
+  <div class="bar"><div class="bar-fill" id="top-mem-bar" style="width:0%;background:#3fb950"></div></div>
+</div>
+<div class="card clickable" onclick="showPortsModal()">
+  <h3>Listening Ports</h3>
+  <div><span class="value" id="port-count">--</span></div>
+  <div style="margin-top:8px;font-size:13px;color:#8b949e" id="port-summary">Click to view details</div>
 </div>
 </div>
 <div class="incidents">
@@ -381,6 +417,33 @@ function updateUI(data) {
             document.getElementById('proc-count').className = 'value ok';
         }
     }
+    if (data.process_resource) {
+        const pr = data.process_resource;
+        if (pr.top_cpu && pr.top_cpu.length > 0) {
+            const topCpu = pr.top_cpu[0];
+            document.getElementById('top-cpu-name').textContent = topCpu.name;
+            document.getElementById('top-cpu-pid').textContent = topCpu.pid;
+            document.getElementById('top-cpu-val').textContent = topCpu.cpu.toFixed(1);
+            document.getElementById('top-cpu-val').className = 'value ' + getClass(topCpu.cpu);
+            document.getElementById('top-cpu-bar').style.width = Math.min(topCpu.cpu, 100) + '%';
+            document.getElementById('top-cpu-bar').style.background = getColor(topCpu.cpu);
+        }
+        if (pr.top_memory && pr.top_memory.length > 0) {
+            const topMem = pr.top_memory[0];
+            document.getElementById('top-mem-name').textContent = topMem.name;
+            document.getElementById('top-mem-pid').textContent = topMem.pid;
+            document.getElementById('top-mem-val').textContent = topMem.memory.toFixed(1);
+            document.getElementById('top-mem-val').className = 'value ' + getClass(topMem.memory);
+            document.getElementById('top-mem-bar').style.width = Math.min(topMem.memory, 100) + '%';
+            document.getElementById('top-mem-bar').style.background = getColor(topMem.memory);
+        }
+    }
+    if (data.port && data.port.ports) {
+        const ports = data.port.ports.filter(p => p.state === 'LISTEN');
+        document.getElementById('port-count').textContent = ports.length;
+        const listenPorts = ports.map(p => p.port).join(', ');
+        document.getElementById('port-summary').textContent = listenPorts || 'No listening ports';
+    }
     document.getElementById('last-update').textContent = 'Updated: ' + new Date().toLocaleTimeString();
 }
 
@@ -512,6 +575,49 @@ function showIncidentDetail(idx) {
         });
         html += '</div>';
     }
+    if (system.process_resource && system.process_resource.alert) {
+        html += '<div class="detail-section"><h4>Process Resource Alert</h4>';
+        html += detailRow('Trigger', system.process_resource.trigger?.toUpperCase() || 'UNKNOWN');
+        if (system.process_resource.high_cpu_processes && system.process_resource.high_cpu_processes.length > 0) {
+            html += '<div class="logs-section"><h5>High CPU Processes</h5>';
+            system.process_resource.high_cpu_processes.forEach(function(p) {
+                html += '<div class="process-row-full">';
+                html += '<div class="process-row-header"><span class="process-name">' + escapeHtml(p.name) + ' (PID: ' + p.pid + ')</span><span class="crit">' + p.cpu.toFixed(1) + '%</span></div>';
+                html += '<div class="process-bar"><div class="process-bar-fill" style="width:' + Math.min(p.cpu, 100) + '%;background:#f85149"></div></div>';
+                html += '</div>';
+            });
+            html += '</div>';
+        }
+        if (system.process_resource.high_memory_processes && system.process_resource.high_memory_processes.length > 0) {
+            html += '<div class="logs-section"><h5>High Memory Processes</h5>';
+            system.process_resource.high_memory_processes.forEach(function(p) {
+                html += '<div class="process-row-full">';
+                html += '<div class="process-row-header"><span class="process-name">' + escapeHtml(p.name) + ' (PID: ' + p.pid + ')</span><span class="warn">' + p.memory.toFixed(1) + '%</span></div>';
+                html += '<div class="process-bar"><div class="process-bar-fill" style="width:' + Math.min(p.memory, 100) + '%;background:#d29922"></div></div>';
+                html += '</div>';
+            });
+            html += '</div>';
+        }
+        html += '</div>';
+    }
+    if (system.port && system.port.alert) {
+        html += '<div class="detail-section"><h4>Port Alert</h4>';
+        if (system.port.triggered_ports && system.port.triggered_ports.length > 0) {
+            html += detailRow('Monitored Ports Triggered', system.port.triggered_ports.join(', '));
+        }
+        if (system.port.unexpected_ports && system.port.unexpected_ports.length > 0) {
+            html += '<div class="logs-section"><h5>Unexpected Listening Ports</h5>';
+            system.port.unexpected_ports.forEach(function(p) {
+                html += '<div class="service-block">';
+                html += '<div class="service-header"><span class="port-badge">' + p.port + '/' + p.protocol + '</span>';
+                html += '<span>' + p.process_name + ' (PID: ' + p.pid + ')</span></div>';
+                html += detailRow('Command', escapeHtml(p.command));
+                html += '</div>';
+            });
+            html += '</div>';
+        }
+        html += '</div>';
+    }
 
     modal.innerHTML = html;
     document.getElementById('modal-overlay').classList.add('active');
@@ -595,6 +701,218 @@ function showProcessesModal() {
 
     modal.innerHTML = html;
     document.getElementById('modal-overlay').classList.add('active');
+}
+
+function showProcessResourceModal() {
+    if (!lastStatsData || !lastStatsData.process_resource) {
+        const modalTitle = document.getElementById('modal-title');
+        const modal = document.getElementById('modal-body');
+        modalTitle.innerText = "Process Resources";
+        modal.innerHTML = '<div class="no-incidents">No process resource data available</div>';
+        document.getElementById('modal-overlay').classList.add('active');
+        return;
+    }
+    const pr = lastStatsData.process_resource;
+    const modalTitle = document.getElementById('modal-title');
+    const modal = document.getElementById('modal-body');
+
+    modalTitle.innerText = "Process Resources";
+
+    let html = '';
+    if (pr.alert) {
+        html += '<div class="alert-box crit">HIGH RESOURCE ALERT: ' + pr.trigger.toUpperCase() + '</div>';
+    }
+
+    if (pr.high_cpu_processes && pr.high_cpu_processes.length > 0) {
+        html += '<div class="detail-section"><h4>High CPU Processes (>80%)</h4>';
+        pr.high_cpu_processes.forEach(function(p) {
+            html += '<div class="service-block">';
+            html += '<div class="service-header"><strong>' + escapeHtml(p.name) + '</strong>';
+            html += '<span class="crit">' + p.cpu.toFixed(1) + '% CPU</span>';
+            html += '<button class="process-kill-btn" onclick="killProcess(' + p.pid + ')">Kill</button></div>';
+            html += detailRow('PID', p.pid);
+            html += detailRow('Memory', p.memory.toFixed(1) + '%');
+            html += detailRow('Command', escapeHtml(p.command));
+            html += '</div>';
+        });
+        html += '</div>';
+    }
+
+    if (pr.high_memory_processes && pr.high_memory_processes.length > 0) {
+        html += '<div class="detail-section"><h4>High Memory Processes (>80%)</h4>';
+        pr.high_memory_processes.forEach(function(p) {
+            html += '<div class="service-block">';
+            html += '<div class="service-header"><strong>' + escapeHtml(p.name) + '</strong>';
+            html += '<span class="warn">' + p.memory.toFixed(1) + '% Memory</span>';
+            html += '<button class="process-kill-btn" onclick="killProcess(' + p.pid + ')">Kill</button></div>';
+            html += detailRow('PID', p.pid);
+            html += detailRow('CPU', p.cpu.toFixed(1) + '%');
+            html += detailRow('Command', escapeHtml(p.command));
+            html += '</div>';
+        });
+        html += '</div>';
+    }
+
+    if (pr.top_cpu && pr.top_cpu.length > 0) {
+        html += '<div class="detail-section"><h4>Top 10 CPU Consumers</h4>';
+        html += '<table class="port-table"><thead><tr><th>Name</th><th>PID</th><th>CPU%</th><th>Mem%</th><th></th></tr></thead><tbody>';
+        pr.top_cpu.slice(0, 10).forEach(function(p) {
+            html += '<tr>';
+            html += '<td>' + escapeHtml(p.name) + '</td>';
+            html += '<td>' + p.pid + '</td>';
+            html += '<td>' + p.cpu.toFixed(1) + '</td>';
+            html += '<td>' + p.memory.toFixed(1) + '</td>';
+            html += '<td><button class="process-kill-btn" onclick="killProcess(' + p.pid + ')">Kill</button></td>';
+            html += '</tr>';
+        });
+        html += '</tbody></table></div>';
+    }
+
+    if (pr.top_memory && pr.top_memory.length > 0) {
+        html += '<div class="detail-section"><h4>Top 10 Memory Consumers</h4>';
+        html += '<table class="port-table"><thead><tr><th>Name</th><th>PID</th><th>Mem%</th><th>CPU%</th><th></th></tr></thead><tbody>';
+        pr.top_memory.slice(0, 10).forEach(function(p) {
+            html += '<tr>';
+            html += '<td>' + escapeHtml(p.name) + '</td>';
+            html += '<td>' + p.pid + '</td>';
+            html += '<td>' + p.memory.toFixed(1) + '</td>';
+            html += '<td>' + p.cpu.toFixed(1) + '</td>';
+            html += '<td><button class="process-kill-btn" onclick="killProcess(' + p.pid + ')">Kill</button></td>';
+            html += '</tr>';
+        });
+        html += '</tbody></table></div>';
+    }
+
+    modal.innerHTML = html;
+    document.getElementById('modal-overlay').classList.add('active');
+}
+
+function showPortsModal() {
+    const modalTitle = document.getElementById('modal-title');
+    const modal = document.getElementById('modal-body');
+
+    modalTitle.innerText = "Port Details";
+
+    if (!lastStatsData || !lastStatsData.port || !lastStatsData.port.ports || lastStatsData.port.ports.length === 0) {
+        modal.innerHTML = '<div class="no-incidents">Loading port data...</div>';
+        fetch('/api/ports', { headers: getAuthHeader() })
+            .then(r => r.json())
+            .then(data => {
+                renderPortsModal(data);
+            })
+            .catch(() => {
+                modal.innerHTML = '<div class="no-incidents">No port data available</div>';
+            });
+        document.getElementById('modal-overlay').classList.add('active');
+        return;
+    }
+
+    renderPortsModal(lastStatsData.port);
+}
+
+function renderPortsModal(portData) {
+    const modalTitle = document.getElementById('modal-title');
+    const modal = document.getElementById('modal-body');
+    modalTitle.innerText = "Port Details";
+
+    const ports = portData.ports || [];
+    const listening = ports.filter(p => p.state === 'LISTEN');
+    const established = ports.filter(p => p.state === 'ESTABLISHED');
+
+    let html = '';
+
+    if (portData.alert) {
+        html += '<div class="alert-box crit">PORT ALERT</div>';
+        if (portData.triggered_ports && portData.triggered_ports.length > 0) {
+            html += '<div class="detail-section"><h4>Monitored Ports Status</h4>';
+            portData.triggered_ports.forEach(function(p) {
+                html += detailRow('Port ' + p, 'Triggered');
+            });
+            html += '</div>';
+        }
+        if (portData.unexpected_ports && portData.unexpected_ports.length > 0) {
+            html += '<div class="detail-section"><h4>Unexpected Listening Ports</h4>';
+            portData.unexpected_ports.forEach(function(p) {
+                html += '<div class="service-block">';
+                html += '<div class="service-header"><span class="port-badge">' + p.port + '/' + p.protocol + '</span>';
+                html += '<span>' + p.process_name + ' (PID: ' + p.pid + ')</span></div>';
+                html += detailRow('Command', escapeHtml(p.command));
+                html += '<button class="port-kill-btn" onclick="killPort(' + p.port + ')">Free Port</button>';
+                html += '</div>';
+            });
+            html += '</div>';
+        }
+    }
+
+    if (listening.length > 0) {
+        html += '<div class="detail-section"><h4>Listening Ports (' + listening.length + ')</h4>';
+        html += '<table class="port-table"><thead><tr><th>Port</th><th>Protocol</th><th>Process</th><th>PID</th><th></th></tr></thead><tbody>';
+        listening.forEach(function(p) {
+            html += '<tr>';
+            html += '<td><span class="port-badge">' + p.port + '</span></td>';
+            html += '<td>' + p.protocol.toUpperCase() + '</td>';
+            html += '<td>' + escapeHtml(p.process_name || '-') + '</td>';
+            html += '<td>' + (p.pid || '-') + '</td>';
+            html += '<td>' + (p.pid ? '<button class="port-kill-btn" onclick="killPort(' + p.port + ')">Free</button>' : '') + '</td>';
+            html += '</tr>';
+        });
+        html += '</tbody></table></div>';
+    }
+
+    if (established.length > 0) {
+        html += '<div class="detail-section"><h4>Established Connections (' + established.length + ')</h4>';
+        html += '<table class="port-table"><thead><tr><th>Local</th><th>Remote</th><th>Process</th><th>State</th></tr></thead><tbody>';
+        established.slice(0, 20).forEach(function(p) {
+            html += '<tr>';
+            html += '<td>' + escapeHtml(p.local_addr || '-') + '</td>';
+            html += '<td>' + escapeHtml(p.remote_addr || '-') + '</td>';
+            html += '<td>' + escapeHtml(p.process_name || '-') + '</td>';
+            html += '<td>' + p.state + '</td>';
+            html += '</tr>';
+        });
+        html += '</tbody></table></div>';
+    }
+
+    modal.innerHTML = html;
+    document.getElementById('modal-overlay').classList.add('active');
+}
+
+function killProcess(pid) {
+    if (!confirm('Are you sure you want to kill process ' + pid + '?')) return;
+    fetch('/api/processes/kill', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
+        body: JSON.stringify({ pid: pid })
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.error) {
+            alert('Failed to kill process: ' + data.error);
+        } else {
+            alert('Process ' + pid + ' killed successfully');
+            closeModal();
+        }
+    })
+    .catch(() => alert('Failed to kill process'));
+}
+
+function killPort(port) {
+    if (!confirm('Are you sure you want to kill the process on port ' + port + '?')) return;
+    fetch('/api/ports/kill', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
+        body: JSON.stringify({ port: port })
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.error) {
+            alert('Failed to free port: ' + data.error);
+        } else {
+            alert('Process on port ' + port + ' killed (PID: ' + data.killed_pid + ')');
+            closeModal();
+        }
+    })
+    .catch(() => alert('Failed to free port'));
 }
 
 function closeModal() {

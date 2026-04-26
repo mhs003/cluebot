@@ -1,13 +1,52 @@
 monitor_interval: 5
 process_interval: 1
 http_port: 8090
-log_dir: /var/lib/cluebot # ./logs
-pid_file: /run/cluebot.pid # ./cluebot.pid
+log_dir: /var/lib/cluebot
+pid_file: /run/cluebot.pid
+
 services:
   - docker
   - harbrixd
+
+port_monitoring:
+  enabled: true
+  ports:
+    - 22
+    - 80
+    - 443
+    - 3000
+    - 8080
+  alert_on_unexpected: true
+
 thresholds:
   cpu_alert: 90
   memory_alert: 90
   disk_alert: 90
   process_limit: 5000
+  single_process_cpu: 80
+  single_process_memory: 80
+
+auto_kill:
+  enabled: true
+  delay_seconds: 5
+  cpu_threshold: 95
+  memory_threshold: 95
+  process_explosion_kill: true
+
+alerts:
+  cooldown_minutes: 5
+  deduplication: true
+  telegram:
+    enabled: true
+    bot_token: "8355797857:AAHj_t4MxB0jVznX6aoXsDbMNKWscjqcuww"
+    chat_id: "1311096462"
+    notify_on:
+      - cpu
+      - memory
+      - disk
+      - service
+      - process
+      - kernel
+      - restart
+      - port
+      - process_resource
